@@ -8,6 +8,15 @@ import http from 'node:http';
 import { getEnv } from './lib/env';
 import { handleCreateOrder } from './handlers/createOrder';
 
+import {
+  getProducts,
+  getProductById,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+} from './services/productService';
+import type { ProductCategory, Size } from './types';
+
 // Валидируем наличие всех переменных окружения
 getEnv();
 
@@ -38,8 +47,8 @@ function readRequestBody(req: http.IncomingMessage): Promise<string> {
  */
 function setCorsHeaders(res: http.ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey, Prefer, x-client-info');
 }
 
 /**
@@ -101,7 +110,131 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── 3. Маршрут не найден (404) ───────────────────
+    // ── 3. Получение списка товаров (GET /api/products) ─
+    if (req.method === 'GET' && pathname === '/api/products') {
+      const category = parsedUrl.searchParams.get('category') as ProductCategory | null;
+      const sort = parsedUrl.searchParams.get('sort') as any;
+      const limit = Number(parsedUrl.searchParams.get('limit')) || 50;
+      const offset = Number(parsedUrl.searchParams.get('offset')) || 0;
+
+      const result = await getProducts({
+        category: category || undefined,
+        sort: sort || undefined,
+        limit,
+        offset,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        ...result,
+      });
+      return;
+    }
+
+    // ── 4. Получение одного товара (GET /api/products/:id)
+    const productMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)$/);
+    if (req.method === 'GET' && productMatch) {
+      const productId = productMatch[1];
+      const product = await getProductById(productId);
+      if (!product) {
+        sendJson(res, 404, { success: false, error: 'Товар не найден' });
+        return;
+      }
+      sendJson(res, 200, { success: true, product });
+      return;
+    }
+
+    // ── 5. Создание товара (POST /api/products) ────────
+    if (req.method === 'POST' && pathname === '/api/products') {
+      const rawBody = await readRequestBody(req);
+      let payload: any;
+      try {
+        payload = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        sendJson(res, 400, { success: false, error: 'Некорректный JSON' });
+        return;
+      }
+
+      const cleanInput = {
+        title: String(payload.title || '').trim(),
+        price: Number(payload.price) || 0,
+        category: payload.category || 'tops',
+        sizes: Array.isArray(payload.sizes)
+          ? payload.sizes
+          : typeof payload.sizes === 'string'
+            ? payload.sizes.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : ['M', 'L'],
+        colors: Array.isArray(payload.colors)
+          ? payload.colors
+          : typeof payload.colors === 'string'
+            ? payload.colors.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : ['Black'],
+        images: Array.isArray(payload.images)
+          ? payload.images
+          : payload.images
+            ? [String(payload.images)]
+            : [],
+        description: String(payload.description || '').trim(),
+      };
+
+      const product = await createProduct(cleanInput);
+      sendJson(res, 201, { success: true, product });
+      return;
+    }
+
+    // ── 6. Обновление товара (PUT / PATCH /api/products/:id или /api/products)
+    if ((req.method === 'PUT' || req.method === 'PATCH') && (pathname === '/api/products' || productMatch)) {
+      const rawBody = await readRequestBody(req);
+      let payload: any;
+      try {
+        payload = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        sendJson(res, 400, { success: false, error: 'Некорректный JSON' });
+        return;
+      }
+
+      const productId = productMatch ? productMatch[1] : (parsedUrl.searchParams.get('id') || payload.id);
+      if (!productId) {
+        sendJson(res, 400, { success: false, error: 'Не указан ID товара' });
+        return;
+      }
+
+      // Санитизация полей перед записью в Supabase
+      const updateData: Record<string, unknown> = {};
+      if (payload.title !== undefined) updateData.title = String(payload.title).trim();
+      if (payload.price !== undefined) updateData.price = Number(payload.price);
+      if (payload.category !== undefined) updateData.category = payload.category;
+      if (payload.sizes !== undefined) {
+        updateData.sizes = Array.isArray(payload.sizes)
+          ? payload.sizes
+          : String(payload.sizes).split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+      if (payload.colors !== undefined) {
+        updateData.colors = Array.isArray(payload.colors)
+          ? payload.colors
+          : String(payload.colors).split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+      if (payload.images !== undefined) {
+        updateData.images = Array.isArray(payload.images)
+          ? payload.images
+          : [String(payload.images)];
+      }
+      if (payload.description !== undefined) updateData.description = String(payload.description).trim();
+
+      const updated = await updateProduct(productId, updateData);
+      sendJson(res, 200, { success: true, product: updated });
+      return;
+    }
+
+    // ── 7. Удаление товара (DELETE /api/products/:id) ──
+    if (req.method === 'DELETE' && productMatch) {
+      const productId = productMatch[1];
+      await deleteProduct(productId);
+      sendJson(res, 200, { success: true, message: 'Товар успешно удален' });
+      return;
+    }
+
+    // ── 8. Маршрут не найден (404) ───────────────────
     sendJson(res, 404, {
       success: false,
       error: `Маршрут ${req.method} ${pathname} не найден`,
