@@ -1,0 +1,25 @@
+{
+  "name": "outsider-klyne-backend",
+  "version": "0.1.0",
+  "description": "Outsider klyne — demo backend (Supabase + TypeScript)",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "tsx scripts/smoke-test.ts",
+    "test:telegram": "tsx src/test-telegram.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^18.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
