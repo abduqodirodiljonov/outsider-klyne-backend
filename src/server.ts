@@ -66,11 +66,16 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   try {
-    // ── 1. Health check ──────────────────────────────
-    if (req.method === 'GET' && pathname === '/health') {
+    // ── 1. Root & Health check ───────────────────────
+    if (req.method === 'GET' && (pathname === '/' || pathname === '/health')) {
       sendJson(res, 200, {
         status: 'ok',
         service: 'outsider-klyne-backend',
+        message: 'Outsider klyne API is running',
+        endpoints: {
+          health: 'GET /health',
+          createOrder: 'POST /api/orders',
+        },
         timestamp: new Date().toISOString(),
       });
       return;
